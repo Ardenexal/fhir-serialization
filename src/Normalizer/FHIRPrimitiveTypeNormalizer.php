@@ -256,6 +256,11 @@ class FHIRPrimitiveTypeNormalizer extends AbstractFHIRNormalizer
      */
     private function denormalizeFromArray(array $data, string $type, ?string $format, array $context): mixed
     {
+        // Clean XML encoder artifacts (@ prefixes, # text nodes)
+        if ($format === 'xml') {
+            $data = $this->cleanXmlArtifacts($data);
+        }
+
         $value      = null;
         $extensions = null;
 
@@ -277,9 +282,9 @@ class FHIRPrimitiveTypeNormalizer extends AbstractFHIRNormalizer
 
         // Handle XML format
         if ($format === 'xml') {
-            // In XML, value is in @value attribute
-            if (isset($data['@value'])) {
-                $value = $data['@value'];
+            // After cleanXmlArtifacts(), @value becomes value
+            if (isset($data['value'])) {
+                $value = $data['value'];
             }
 
             // Extensions are in extension child elements.
@@ -292,13 +297,15 @@ class FHIRPrimitiveTypeNormalizer extends AbstractFHIRNormalizer
             }
         }
 
-        return $this->createPrimitiveInstance($type, $value, $extensions);
+        return $this->createPrimitiveInstance($type, $value, $extensions, $format, $context);
     }
 
     /**
      * Create a primitive instance with value and extensions.
+     *
+     * @param array<string, mixed> $context
      */
-    private function createPrimitiveInstance(string $type, mixed $value, mixed $extensions): mixed
+    private function createPrimitiveInstance(string $type, mixed $value, mixed $extensions, ?string $format = null, array $context = []): mixed
     {
         try {
             /** @var class-string $type */
@@ -320,13 +327,14 @@ class FHIRPrimitiveTypeNormalizer extends AbstractFHIRNormalizer
             if ($extensions !== null && $reflection->hasProperty('extension')) {
                 $extensionProperty = $reflection->getProperty('extension');
 
-                // Denormalize extensions if denormalizer is available
+                // Denormalize extensions to Extension objects
                 if ($this->denormalizer !== null && is_array($extensions)) {
                     $denormalizedExtensions = [];
                     foreach ($extensions as $extension) {
                         if (is_array($extension)) {
-                            // Try to denormalize as Extension object
-                            $denormalizedExtensions[] = $extension; // Simplified for now
+                            // Denormalize to Extension object (cleanXmlArtifacts already handled @ prefixes)
+                            $extensionClass = 'Ardenexal\\FHIRTools\\Component\\Models\\R4\\DataType\\Extension';
+                            $denormalizedExtensions[] = $this->denormalizer->denormalize($extension, $extensionClass, $format, $context);
                         } else {
                             $denormalizedExtensions[] = $extension;
                         }
